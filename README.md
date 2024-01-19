@@ -6,7 +6,7 @@ Model structure:
 
 
 # Training
-## Train with ViT-L
+Train with ViT-L
 ```python
 python train.py \
         --data_path ../robomis \
@@ -23,7 +23,7 @@ python train.py \
 ```
 
 #  Evaluation
-## For evaluation, simply add --evaluate for the triaiing file
+## For evaluation, simply add --evaluate for the training file
 ```python
 python train.py \
         --data_path ../robomis \
