@@ -23,7 +23,7 @@ python train.py \
 ```
 
 #  Evaluation
-## For evaluation, simply add --evaluate for the training file
+For evaluation, simply add --evaluate for the training file
 ```python
 python train.py \
         --data_path ../robomis \
