@@ -1,6 +1,8 @@
 import torch
 from torch import nn
 import torch.nn.functional as F
+from functools import partial
+from .unet_parts import DoubleConv, Up, Down, UNet, OutConv
 
 class MLAHead(nn.Module):
     def __init__(self, mla_channels=1024, mlahead_channels=128, norm_cfg=None):

@@ -33,35 +33,31 @@ from tqdm import tqdm
 
 import utils
 import vision_transformer as vits
-from eval_knn import extract_features
 from timm.models.layers import trunc_normal_ 
 from einops import rearrange
 import matplotlib.pyplot as plt
-from masktrans_block import Block, FeedForward
 import albumentations as A
 from albumentations.pytorch import ToTensorV2
 import cv2
 # from torchmetrics.functional import dice_score
 
-import utils
-import vision_transformer as vits
-from setr_decoder import TransModel2d, TransConfig
 
 from functools import partial
 from dinov2.eval.setup import build_model_for_eval, get_autocast_dtype
 from dinov2.utils.config import get_cfg_from_args
 from dinov2.eval.utils import ModelWithIntermediateLayers
 
-from SegLoss.losses_pytorch.dice_loss import TverskyLoss, SoftDiceLoss, DC_and_CE_loss
+from segloss.dice_loss import TverskyLoss, SoftDiceLoss, DC_and_CE_loss
+from segloss.dice import DC
+
 # from SegLoss.losses_pytorch.dice_loss import *
 from tools.dataset import Robomis #EndoVis2017, EndoVis2018, ...
-from segloss.dice import DC
 from backbones.decoders import DecoderMLA #.....decoder structure
-
-from backbones.adapter_blocks import CAViT, CACNN
+from backbones.encoders import FeatureEncoder
+from backbones.adapter_blocks import CAViT, CACNN, deform_inputs
 
 # from mmcv.cnn import build_norm_layer
-from ops.modules import MSDeformAttn
+from backbones.ops.modules import MSDeformAttn
 
 
 def train_seg(args):
@@ -83,7 +79,7 @@ def train_seg(args):
     autocast_ctx = partial(torch.cuda.amp.autocast, enabled=True, dtype=autocast_dtype)
     feature_model = ModelWithIntermediateLayers(model, n_last_blocks, autocast_ctx)
 
-    backbone_encoder = SpatialPriorModule()
+    backbone_encoder = FeatureEncoder()
     backbone_encoder = backbone_encoder.cuda()
     backbone_encoder = nn.parallel.DistributedDataParallel(backbone_encoder,device_ids=[args.gpu])
 
@@ -389,8 +385,9 @@ def train(model, feature_model, backbone_encoder, cross_vit, cross_cnn, seg_deco
 
         output = nn.Softmax(1)(output)
         # loss_tky = SoftDiceLoss()(output, target.unsqueeze(1))
-        loss_tky = DC_and_CE_loss()(output, target.unsqueeze(1))
-        loss = 1 + loss_tky
+        # loss_tky = DC_and_CE_loss()(output, target.unsqueeze(1))
+        # loss = 1 + loss_tky
+        loss = dice_loss(output, target.unsqueeze(1))
         # loss=nn.BCEWithLogitsLoss()(output, target)
 
         # compute the gradients
