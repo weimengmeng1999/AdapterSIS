@@ -88,6 +88,82 @@ class DecoderMLA(nn.Module):
         x = F.interpolate(x, size=self.img_size, mode='bilinear')
         return x
 
+
+class FeatureDecoder(nn.Module):
+    def __init__(self, img_size=588, inplanes=64, embed_dim=1024, num_classes=2, features=[1024, 512, 256, 128, 64]):
+        super().__init__()
+        self.img_size = img_size
+        self.features = features
+        self.inplanes = inplanes
+        self.embed_dim = embed_dim
+        self.num_classes = num_classes
+
+        # Upsampling layers
+        # self.decoder_0 = nn.Sequential(
+        #     nn.Conv2d(self.features[0]*3, self.features[0], 3, padding=1),
+        #     nn.BatchNorm2d(self.features[0]),
+        #     nn.ReLU(inplace=True),
+        #     nn.Upsample(scale_factor=2, mode='bilinear', align_corners=True)
+        # )
+
+        self.decoder_1 = nn.Sequential(
+            nn.Conv2d(self.features[0]*3, self.features[1], 3, padding=1),
+            nn.BatchNorm2d(self.features[1]),
+            nn.ReLU(inplace=True),
+            nn.Upsample(scale_factor=2, mode='bilinear', align_corners=True)
+        )
+        self.decoder_2 = nn.Sequential(
+            nn.Conv2d(self.features[1], self.features[2], 3, padding=1),
+            nn.BatchNorm2d(self.features[2]),
+            nn.ReLU(inplace=True),
+            nn.Upsample(scale_factor=2, mode='bilinear', align_corners=True)
+        )
+        self.decoder_3 = nn.Sequential(
+            nn.Conv2d(self.features[2], self.features[3], 3, padding=1),
+            nn.BatchNorm2d(self.features[3]),
+            nn.ReLU(inplace=True),
+            nn.Upsample(scale_factor=2, mode='bilinear', align_corners=True)
+        )
+        self.decoder_4 = nn.Sequential(
+            nn.Conv2d(self.features[3], self.features[4], 3, padding=1),
+            nn.BatchNorm2d(self.features[4]),
+            nn.ReLU(inplace=True),
+            nn.Upsample(scale_factor=2, mode='bilinear', align_corners=True)
+        )
+
+        # Final convolution
+        self.final_out = nn.Conv2d(self.features[4], self.num_classes, 3, padding=1)  # Assuming 3 as the final output channels (e.g., for RGB images)
+
+    def forward(self, x):
+        # x = self.decoder_0(x)
+        x = self.decoder_1(x)
+        # diffy = x.size()[2] - c4.size()[2]
+        # diffx = x.size()[3] - c4.size()[3]
+        # c4 = F.pad(c4, [diffx // 2, diffx - diffx // 2,
+        #                diffy // 2, diffy - diffy // 2])
+        # x = torch.cat((x, c4), dim=1)  # Skip connection from encoder
+        x = self.decoder_2(x)
+        # diffy = x.size()[2] - c3.size()[2] 
+        # diffx = x.size()[3] - c3.size()[3]
+        # c3 = F.pad(c3, [diffx // 2, diffx - diffx // 2,
+        #                diffy // 2, diffy - diffy // 2])
+        # x = torch.cat((x, c3), dim=1)  # Skip connection from encoder
+        x = self.decoder_3(x)
+        # diffy = x.size()[2] - c2.size()[2]
+        # diffx = x.size()[3] - c2.size()[3]
+        # c2 = F.pad(c2, [diffx // 2, diffx - diffx // 2,
+        #                diffy // 2, diffy - diffy // 2])
+        # x = torch.cat((x, c2), dim=1)  # Skip connection from encoder
+        x = self.decoder_4(x)
+        # diffy = x.size()[2] - c1.size()[2]
+        # diffx = x.size()[3] - c1.size()[3]
+        # c1 = F.pad(c1, [diffx // 2, diffx - diffx // 2,
+        #                diffy // 2, diffy - diffy // 2])
+        # x = torch.cat((x, c1), dim=1)  # Skip connection from encode
+        x = self.final_out(x)
+        return x
+
+
 class DecoderSETR(nn.Module):
     def __init__(self, in_channels, out_channels, features=[512, 256, 128, 64]):
         super().__init__()

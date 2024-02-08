@@ -52,7 +52,7 @@ from segloss.dice import DC
 
 # from SegLoss.losses_pytorch.dice_loss import *
 from tools.dataset import Robomis #EndoVis2017, EndoVis2018, ...
-from backbones.decoders import DecoderMLA, FeatureDecoder #.....decoder structure
+from backbones.decoders import DecoderMLA #.....decoder structure
 from backbones.encoders import FeatureEncoder
 from backbones.adapter_blocks import CAViT, CACNN, deform_inputs
 
@@ -111,7 +111,7 @@ def train_seg(args):
     cross_cnn = cross_cnn.cuda()
     cross_cnn = nn.parallel.DistributedDataParallel(cross_cnn,device_ids=[args.gpu])
 
-    seg_decoder = FeatureDecoder(num_classes=2)
+    seg_decoder = DecoderMLA(num_classes=2)
     seg_decoder = seg_decoder.cuda()
     seg_decoder = nn.parallel.DistributedDataParallel(seg_decoder,device_ids=[args.gpu])
 
@@ -176,18 +176,10 @@ def train_seg(args):
 
     # set optimizer
     optimizer = torch.optim.SGD(
-            [
-        {'params': cross_cnn.parameters()},
-        {'params': cross_vit.parameters()},
-        {'params': backbone_encoder.parameters()},
-        {'params': seg_decoder.parameters()}
-             ],
-        # seg_decoder.parameters(),
-        lr = args.lr,
-        # * (args.batch_size_per_gpu * utils.get_world_size()) / 16., # linear scaling rule
-        momentum=0.99,
-        # weight_decay=0, # we do not apply weight decay
-        weight_decay=3e-5
+        seg_decoder.parameters(),
+        args.lr * (args.batch_size_per_gpu * utils.get_world_size()) / 16., # linear scaling rule
+        momentum=0.9,
+        weight_decay=0, # we do not apply weight decay
     )
     scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, args.epochs, eta_min=0)
 
@@ -284,24 +276,10 @@ def train(model, feature_model, backbone_encoder, cross_vit, cross_cnn, seg_deco
 
     
         with torch.no_grad():
-            x_tokens_list = feature_model(inp)
-            #   intermediate_output = x_tokens_list[-n:-1]
-            intermediate_output_last = x_tokens_list[-1:]
-            intermediate_output_last_2 = x_tokens_list[-2:-1]
-            intermediate_output_last_3 = x_tokens_list[-3:-2]
-            intermediate_output_last_4 = x_tokens_list[-4:-3]
-
-            output_last = torch.cat([outputs for outputs, _ in intermediate_output_last], dim=-1)
-            output_vit = output_last
-            output_last_2 =  torch.cat([outputs for outputs, _ in intermediate_output_last_2], dim=-1)
-            output_last_3 =  torch.cat([outputs for outputs, _ in intermediate_output_last_3], dim=-1)
-            output_last_4 =  torch.cat([outputs for outputs, _ in intermediate_output_last_4], dim=-1)
-
             x = model.patch_embed(inp)
             for idx, blk in enumerate(model.blocks[0 : -3]):
                 x = blk(x)
                 # cls, x = (x[:,:1,], x[:,1:,],)
-            
 
         x = cross_vit(
             query=x,
@@ -310,29 +288,15 @@ def train(model, feature_model, backbone_encoder, cross_vit, cross_cnn, seg_deco
             spatial_shapes=deform_inputs1[1],
             level_start_index=deform_inputs1[2],
         )
-        c=cross_cnn(query=c,
-            reference_points=deform_inputs2[0],
-            feat=x,
-            spatial_shapes=deform_inputs2[1],
-            level_start_index=deform_inputs2[2],
-            H=H_c,
-            W=W_c)
-        output_last_4 = x + output_last_4
-        x = output_last_4
 
         # x = torch.cat((cls, x), dim=1)
+        output_last_4 = x
 ########################################################################################
         with torch.no_grad():
             for idx, blk in enumerate(model.blocks[-3 : -2]):
                 x = blk(x)
                 # cls, x = (x[:,:1,], x[:,1:,],)
-        x = cross_vit(
-            query=x,
-            reference_points=deform_inputs1[0],
-            feat=c,
-            spatial_shapes=deform_inputs1[1],
-            level_start_index=deform_inputs1[2],
-        )
+    
         c=cross_cnn(query=c,
             reference_points=deform_inputs2[0],
             feat=x,
@@ -340,21 +304,21 @@ def train(model, feature_model, backbone_encoder, cross_vit, cross_cnn, seg_deco
             level_start_index=deform_inputs2[2],
             H=H_c,
             W=W_c)
-        output_last_3 = x + output_last_3
-        x = output_last_3 
+        x = cross_vit(
+            query=x,
+            reference_points=deform_inputs1[0],
+            feat=c,
+            spatial_shapes=deform_inputs1[1],
+            level_start_index=deform_inputs1[2],
+        )
+        # x = torch.cat((cls, x), dim=1)
+        output_last_3 = x
 ########################################################################################
         with torch.no_grad():
             for idx, blk in enumerate(model.blocks[-2 : -1]):
                 x = blk(x)
                 # cls, x = (x[:,:1,], x[:,1:,],)
     
-        x = cross_vit(
-            query=x,
-            reference_points=deform_inputs1[0],
-            feat=c,
-            spatial_shapes=deform_inputs1[1],
-            level_start_index=deform_inputs1[2],
-        )
         c=cross_cnn(query=c,
             reference_points=deform_inputs2[0],
             feat=x,
@@ -362,21 +326,21 @@ def train(model, feature_model, backbone_encoder, cross_vit, cross_cnn, seg_deco
             level_start_index=deform_inputs2[2],
             H=H_c,
             W=W_c)
-        output_last_2 = x + output_last_2
-        x = output_last_2 
+        x = cross_vit(
+            query=x,
+            reference_points=deform_inputs1[0],
+            feat=c,
+            spatial_shapes=deform_inputs1[1],
+            level_start_index=deform_inputs1[2],
+        )
+        # x = torch.cat((cls, x), dim=1)
+        output_last_2 = x
 ########################################################################################
         with torch.no_grad():
-            for idx, blk in enumerate(model.blocks[-1 : ]):
+            for idx, blk in enumerate(model.blocks[-2 : -1]):
                 x = blk(x)
                 # cls, x = (x[:,:1,], x[:,1:,],)
     
-        x = cross_vit(
-            query=x,
-            reference_points=deform_inputs1[0],
-            feat=c,
-            spatial_shapes=deform_inputs1[1],
-            level_start_index=deform_inputs1[2],
-        )
         c=cross_cnn(query=c,
             reference_points=deform_inputs2[0],
             feat=x,
@@ -384,42 +348,40 @@ def train(model, feature_model, backbone_encoder, cross_vit, cross_cnn, seg_deco
             level_start_index=deform_inputs2[2],
             H=H_c,
             W=W_c)
-        output_last = x + output_last
+        x = cross_vit(
+            query=x,
+            reference_points=deform_inputs1[0],
+            feat=c,
+            spatial_shapes=deform_inputs1[1],
+            level_start_index=deform_inputs1[2],
+        )
+        # x = torch.cat((cls, x), dim=1)
+        output_last = x
 
         with torch.no_grad():
+          x_tokens_list = feature_model(inp)
+          intermediate_output_last = x_tokens_list[-1:]
+
+          output_last_vit = torch.cat([outputs for outputs, _ in intermediate_output_last], dim=-1)
+          output_last = output_last_vit + output_last
+
           output_last = rearrange(output_last, "b (h w) (p1 p2 c) -> b c (h p1) (w p2)", 
                     p1 = 1, p2 = 1, 
                     h = H // 14, w = W // 14, 
                     c = 1024)
-          output_vit = rearrange(output_vit, "b (h w) (p1 p2 c) -> b c (h p1) (w p2)", 
+          output_last_2 = rearrange(output_last_2, "b (h w) (p1 p2 c) -> b c (h p1) (w p2)", 
                     p1 = 1, p2 = 1, 
                     h = H // 14, w = W // 14, 
                     c = 1024)
-          c4 = rearrange(c4, "b (h w) (p1 p2 c) -> b c (h p1) (w p2)", 
+          output_last_3 = rearrange(output_last_3, "b (h w) (p1 p2 c) -> b c (h p1) (w p2)", 
                     p1 = 1, p2 = 1, 
-                    h = 18, w = 18, 
+                    h = H // 14, w = W // 14, 
                     c = 1024)
-          diffy = output_last.size()[2] - c4.size()[2]
-          diffx = output_last.size()[3] - c4.size()[3]
-          c4 = F.pad(c4, [diffx // 2, diffx - diffx // 2,
-                       diffy // 2, diffy - diffy // 2])
-          output_last_cat = torch.cat((output_last, c4,  output_vit), dim = 1) #from adater, from cnn, 
-        #   print(output_last_cat.size())
-        #   output_last_2 = rearrange(output_last_2, "b (h w) (p1 p2 c) -> b c (h p1) (w p2)", 
-        #             p1 = 1, p2 = 1, 
-        #             h = H // 14, w = W // 14, 
-        #             c = 1024)
-        #   output_last_3 = rearrange(output_last_3, "b (h w) (p1 p2 c) -> b c (h p1) (w p2)", 
-        #             p1 = 1, p2 = 1, 
-        #             h = H // 14, w = W // 14, 
-        #             c = 1024)
-        #   output_last_4 = rearrange(output_last_4, "b (h w) (p1 p2 c) -> b c (h p1) (w p2)", 
-        #             p1 = 1, p2 = 1, 
-        #             h = H // 14, w = W // 14, 
-        #             c = 1024)
-        # print(co3.size())
-        output = seg_decoder(output_last_cat)
-        output = F.interpolate(output, size=(H, W), mode="bilinear")
+          output_last_4 = rearrange(output_last_4, "b (h w) (p1 p2 c) -> b c (h p1) (w p2)", 
+                    p1 = 1, p2 = 1, 
+                    h = H // 14, w = W // 14, 
+                    c = 1024)
+        output = seg_decoder(output_last, output_last_2, output_last_3, output_last_4)
 
         output = nn.Softmax(1)(output)
         # loss_tky = SoftDiceLoss()(output, target.unsqueeze(1))
@@ -474,24 +436,10 @@ def validate_network(val_loader, model, feature_model, backbone_encoder, cross_v
 
     
         with torch.no_grad():
-            x_tokens_list = feature_model(inp)
-            #   intermediate_output = x_tokens_list[-n:-1]
-            intermediate_output_last = x_tokens_list[-1:]
-            intermediate_output_last_2 = x_tokens_list[-2:-1]
-            intermediate_output_last_3 = x_tokens_list[-3:-2]
-            intermediate_output_last_4 = x_tokens_list[-4:-3]
-
-            output_last = torch.cat([outputs for outputs, _ in intermediate_output_last], dim=-1)
-            output_vit = output_last
-            output_last_2 =  torch.cat([outputs for outputs, _ in intermediate_output_last_2], dim=-1)
-            output_last_3 =  torch.cat([outputs for outputs, _ in intermediate_output_last_3], dim=-1)
-            output_last_4 =  torch.cat([outputs for outputs, _ in intermediate_output_last_4], dim=-1)
-
             x = model.patch_embed(inp)
             for idx, blk in enumerate(model.blocks[0 : -3]):
                 x = blk(x)
                 # cls, x = (x[:,:1,], x[:,1:,],)
-            
 
         x = cross_vit(
             query=x,
@@ -500,29 +448,15 @@ def validate_network(val_loader, model, feature_model, backbone_encoder, cross_v
             spatial_shapes=deform_inputs1[1],
             level_start_index=deform_inputs1[2],
         )
-        c=cross_cnn(query=c,
-            reference_points=deform_inputs2[0],
-            feat=x,
-            spatial_shapes=deform_inputs2[1],
-            level_start_index=deform_inputs2[2],
-            H=H_c,
-            W=W_c)
-        output_last_4 = x + output_last_4
-        x = output_last_4
 
         # x = torch.cat((cls, x), dim=1)
+        output_last_4 = x
 ########################################################################################
         with torch.no_grad():
             for idx, blk in enumerate(model.blocks[-3 : -2]):
                 x = blk(x)
                 # cls, x = (x[:,:1,], x[:,1:,],)
-        x = cross_vit(
-            query=x,
-            reference_points=deform_inputs1[0],
-            feat=c,
-            spatial_shapes=deform_inputs1[1],
-            level_start_index=deform_inputs1[2],
-        )
+    
         c=cross_cnn(query=c,
             reference_points=deform_inputs2[0],
             feat=x,
@@ -530,21 +464,21 @@ def validate_network(val_loader, model, feature_model, backbone_encoder, cross_v
             level_start_index=deform_inputs2[2],
             H=H_c,
             W=W_c)
-        output_last_3 = x + output_last_3
-        x = output_last_3 
+        x = cross_vit(
+            query=x,
+            reference_points=deform_inputs1[0],
+            feat=c,
+            spatial_shapes=deform_inputs1[1],
+            level_start_index=deform_inputs1[2],
+        )
+        # x = torch.cat((cls, x), dim=1)
+        output_last_3 = x
 ########################################################################################
         with torch.no_grad():
             for idx, blk in enumerate(model.blocks[-2 : -1]):
                 x = blk(x)
                 # cls, x = (x[:,:1,], x[:,1:,],)
     
-        x = cross_vit(
-            query=x,
-            reference_points=deform_inputs1[0],
-            feat=c,
-            spatial_shapes=deform_inputs1[1],
-            level_start_index=deform_inputs1[2],
-        )
         c=cross_cnn(query=c,
             reference_points=deform_inputs2[0],
             feat=x,
@@ -552,21 +486,21 @@ def validate_network(val_loader, model, feature_model, backbone_encoder, cross_v
             level_start_index=deform_inputs2[2],
             H=H_c,
             W=W_c)
-        output_last_2 = x + output_last_2
-        x = output_last_2 
+        x = cross_vit(
+            query=x,
+            reference_points=deform_inputs1[0],
+            feat=c,
+            spatial_shapes=deform_inputs1[1],
+            level_start_index=deform_inputs1[2],
+        )
+        # x = torch.cat((cls, x), dim=1)
+        output_last_2 = x
 ########################################################################################
         with torch.no_grad():
-            for idx, blk in enumerate(model.blocks[-1 : ]):
+            for idx, blk in enumerate(model.blocks[-2 : -1]):
                 x = blk(x)
                 # cls, x = (x[:,:1,], x[:,1:,],)
     
-        x = cross_vit(
-            query=x,
-            reference_points=deform_inputs1[0],
-            feat=c,
-            spatial_shapes=deform_inputs1[1],
-            level_start_index=deform_inputs1[2],
-        )
         c=cross_cnn(query=c,
             reference_points=deform_inputs2[0],
             feat=x,
@@ -574,43 +508,45 @@ def validate_network(val_loader, model, feature_model, backbone_encoder, cross_v
             level_start_index=deform_inputs2[2],
             H=H_c,
             W=W_c)
-        output_last = x + output_last
+        x = cross_vit(
+            query=x,
+            reference_points=deform_inputs1[0],
+            feat=c,
+            spatial_shapes=deform_inputs1[1],
+            level_start_index=deform_inputs1[2],
+        )
+        # x = torch.cat((cls, x), dim=1)
+        output_last = x
 
         with torch.no_grad():
+          x_tokens_list = feature_model(inp)
+        #   intermediate_output = x_tokens_list[-n:-1]
+          intermediate_output_last = x_tokens_list[-1:]
+        #   intermediate_output_last_2 = x_tokens_list[-2:-1]
+        #   intermediate_output_last_3 = x_tokens_list[-3:-2]
+        #   intermediate_output_last_4 = x_tokens_list[-4:-3]
+        #   print(x_tokens_list[-1:].shape)
+          output_last_vit = torch.cat([outputs for outputs, _ in intermediate_output_last], dim=-1)
+          output_last = output_last_vit + output_last
+          
           output_last = rearrange(output_last, "b (h w) (p1 p2 c) -> b c (h p1) (w p2)", 
                     p1 = 1, p2 = 1, 
                     h = H // 14, w = W // 14, 
                     c = 1024)
-          output_vit = rearrange(output_vit, "b (h w) (p1 p2 c) -> b c (h p1) (w p2)", 
+          output_last_2 = rearrange(output_last_2, "b (h w) (p1 p2 c) -> b c (h p1) (w p2)", 
                     p1 = 1, p2 = 1, 
                     h = H // 14, w = W // 14, 
                     c = 1024)
-          c4 = rearrange(c4, "b (h w) (p1 p2 c) -> b c (h p1) (w p2)", 
+          output_last_3 = rearrange(output_last_3, "b (h w) (p1 p2 c) -> b c (h p1) (w p2)", 
                     p1 = 1, p2 = 1, 
-                    h = 18, w = 18, 
+                    h = H // 14, w = W // 14, 
                     c = 1024)
-          diffy = output_last.size()[2] - c4.size()[2]
-          diffx = output_last.size()[3] - c4.size()[3]
-          c4 = F.pad(c4, [diffx // 2, diffx - diffx // 2,
-                       diffy // 2, diffy - diffy // 2])
-          output_last_cat = torch.cat((output_last, c4,  output_vit), dim = 1) #from adater, from cnn, 
-        #   print(output_last_cat.size())
-        #   output_last_2 = rearrange(output_last_2, "b (h w) (p1 p2 c) -> b c (h p1) (w p2)", 
-        #             p1 = 1, p2 = 1, 
-        #             h = H // 14, w = W // 14, 
-        #             c = 1024)
-        #   output_last_3 = rearrange(output_last_3, "b (h w) (p1 p2 c) -> b c (h p1) (w p2)", 
-        #             p1 = 1, p2 = 1, 
-        #             h = H // 14, w = W // 14, 
-        #             c = 1024)
-        #   output_last_4 = rearrange(output_last_4, "b (h w) (p1 p2 c) -> b c (h p1) (w p2)", 
-        #             p1 = 1, p2 = 1, 
-        #             h = H // 14, w = W // 14, 
-        #             c = 1024)
-        # print(co3.size())
-        output = seg_decoder(output_last_cat)
-        output = F.interpolate(output, size=(H, W), mode="bilinear")
-    
+          output_last_4 = rearrange(output_last_4, "b (h w) (p1 p2 c) -> b c (h p1) (w p2)", 
+                    p1 = 1, p2 = 1, 
+                    h = H // 14, w = W // 14, 
+                    c = 1024)
+
+        output = seg_decoder(output_last, output_last_2, output_last_3, output_last_4)
         # output = F.interpolate(output, size=(H, W), mode="bilinear")
         # loss = nn.CrossEntropyLoss()(output, target)
         loss = nn.CrossEntropyLoss(#weight=None, 
@@ -670,7 +606,7 @@ if __name__ == '__main__':
     parser.add_argument('--batch_size_per_gpu', default=16, type=int, help='Per-GPU batch-size')
     parser.add_argument("--dist_url", default="env://", type=str, help="""url used to set up
         distributed training; see https://pytorch.org/docs/stable/distributed.html""")
-    parser.add_argument("--local-rank", default=0, type=int, help="Please ignore and do not set this argument.")
+    parser.add_argument("--local_rank", default=0, type=int, help="Please ignore and do not set this argument.")
     parser.add_argument('--data_path', default='/path/to/imagenet/', type=str)
     parser.add_argument('--num_workers', default=10, type=int, help='Number of data loading workers per GPU.')
     parser.add_argument('--val_freq', default=1, type=int, help="Epoch frequency for validation.")
