@@ -1,8 +1,0 @@
-# torch>=1.10.0
-omegaconf
-torchmetrics
-timm
-einops
-albumentations
-opencv-python
-# nnunet==1.7.0
