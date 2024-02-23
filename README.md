@@ -45,10 +45,10 @@ python train.py \
 Train with ViT-L on a multiple GPUs
 ```python
 export CUDA_VISIBLE_DEVICES=0,1
-export PYTHONPATH=/nfs/home/mwei/AdapterSIS-dgx
+export PYTHONPATH=.../AdapterSIS
 python -m torch.distributed.launch --nproc_per_node=2 eval_paper.py \
-        --data_path /nfs/home/mwei/mmsegmentation/data/robo \
-        --output_dir /nfs/home/mwei/AdapterExp/paperonn \
+        --data_path .../data/robo \
+        --output_dir .../AdapterExp/paperonn \
         --arch vit_base \
         --patch_size 14 \
         --n_last_blocks 4 \
