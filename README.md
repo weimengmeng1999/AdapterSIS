@@ -24,7 +24,7 @@ For `CholecSeg8k`, you can download the dataset from [here](https://www.kaggle.c
 
 For `AutoLaparo`, you can request the dataset from [here](https://autolaparo.github.io/).
 
-NOTE: The `Robust-MIS 2019' dataset includes 3 stages of testing, and the stage 3 is unseen images during training process.
+NOTE: The `Robust-MIS 2019' dataset includes 3 stages of testing, and stage 3 is unseen images during the training process.
 
 ## Training
 Train with ViT-L on a single GPU
@@ -42,7 +42,7 @@ python train.py \
         --num_workers 2 \
         --epochs 500 \
 ```
-Train with ViT-L on a multiple GPUs
+Train with ViT-L on multiple GPUs
 ```python
 export CUDA_VISIBLE_DEVICES=0,1
 export PYTHONPATH=.../AdapterSIS
